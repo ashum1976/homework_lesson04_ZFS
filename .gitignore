@@ -1,0 +1,3 @@
+.vagrant
+zfs_snapshot_disk
+zfs_pool_disk
