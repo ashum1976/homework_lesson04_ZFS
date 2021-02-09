@@ -1,5 +1,5 @@
 
-#                                                               Работа с ZFS
+#                                                              1. Работа с ZFS
 
 #                                           1.1 Настройка запущенного стенда (Vikentsi Lapa - https://github.com/nixuser/virtlab/tree/main/zfs)
 
@@ -11,7 +11,7 @@
 mkdir -p /usr/local/share/bash-completion/completions && cd /usr/local/share/bash-completion/completions
 curl -O https://raw.githubusercontent.com/openzfs/zfs/master/contrib/bash_completion.d/zfs
 chmod +x /usr/local/share/bash-completion/completions/zfs
-source /usr/local/share/bash-completion/completions/zfs <----- без перелогина активировали автодополнения zfs
+source /usr/local/share/bash-completion/completions/zfs <-----  активировали автодополнения zfs
 
 
 #                                           1.2 Срздание, управление, свойства пула zfs 
@@ -69,6 +69,11 @@ source /usr/local/share/bash-completion/completions/zfs <----- без перел
 
 
 Файловые системы ZFS представляют собой центральную точку администрирования. Наиболее эффективной моделью является использование одной файловой системы для каждого пользователя или проекта, поскольку это обеспечивает возможность управления свойствами, снимками и резервным копированием для конкретного пользователя или проекта.
+
+*           Монтирование файловых систем ZFS
+
+            Технология ZFS разработана в целях снижения сложности систем и упрощения администрирования. Например, существующие файловые системы требуют редактирования файла /etc/fstab при каждом добавлении новой файловой системы. Для ZFS эта потребность не актуальна вследствие автоматического монтирования и размонтирования файловых систем в соответствии со свойствами набора данных. Нет необходимости управлять записями ZFS в файле /etc/fstab.
+
 ZFS позволяет организовать файловые системы в иерархии для группирования схожих систем. Эта модель обеспечивает центральную точку администрирования для
 управления свойствами и администрирования файловых систем. Аналогичные файловые системы должны создаваться под общим именем.
 При создании ФС, если не указана точка монтирования, то используется та, что задана в и
@@ -120,7 +125,7 @@ ZFS позволяет организовать файловые системы 
 
 Получить всё параметры файловой системы, или отдельные значения, можно с помощью команды get:
 
--        [root@server completions]# zfs get all hwpool/home/user1
+            [root@server completions]# zfs get all hwpool/home/user1
             
             
             NAME               PROPERTY              VALUE                  SOURCE
@@ -137,7 +142,7 @@ ZFS позволяет организовать файловые системы 
             hwpool/home/user1  mountpoint            /hwpool/home/user1     default
             hwpool/home/user1  sharenfs              off                    default
             hwpool/home/user1  checksum              on                     default
-            hwpool/home/user1  compression           off                    default
+            hwpool/home/user1  compression           off                    default  <------ значение параметра по умолчаню
             hwpool/home/user1  atime                 on                     default
             hwpool/home/user1  devices               on                     default
             hwpool/home/user1  exec                  on                     default
@@ -196,8 +201,46 @@ ZFS позволяет организовать файловые системы 
             hwpool/home/user1  pbkdf2iters           0                      default
             hwpool/home/user1  special_small_blocks  0                      default
 
+Отдельные значения параметров ФС, можно узнать с помощью команды get "имя параметра" :
 
-
- 
+            [root@server completions]# zfs get compression hwpool/home/user1
             
- 
+            NAME               PROPERTY     VALUE     SOURCE
+            hwpool/home/user1  compression  off       default
+            
+            [root@server completions]# zfs get compressratio hwpool/home/user1
+            
+            NAME               PROPERTY       VALUE  SOURCE
+            hwpool/home/user1  compressratio  1.00x  -
+#                                                               2. Домашнее задание
+#                                           2.1 Установка параметров сжатия ФС
+
+ Включение или выключение сжатия для ФС определяется параметром "compression=on/off"  Доступные значения: on , off, lzjb, gzip и gzip-N, zle, lz4.  По умолчанию установлено значение off. Активация сжатия в файловой системе с существующими данными приводит к сжатию только новых данных. Существующие данные не сжимаются.
+
+            compression     YES      YES   on | off | lzjb | gzip | gzip-[1-9] | zle | lz4 <----- варианты сжатия
+            
+            [root@server completions]# zfs set compression=lzjb hwpool/home  <----- установили значение сжатия lzjb, которое переопределим в дочерних ФС ( user 1,2,3), user4 на значении от родительской ФС
+            
+            [root@server completions]# zfs set compression=gzip-9 hwpool/home/user1
+            [root@server completions]# zfs set compression=lz4 hwpool/home/user2
+            [root@server completions]# zfs set compression=zle hwpool/home/user3
+            [root@server completions]# zfs create hwpool/home/user4
+            
+Был скопирован файл " 3,2M war-and-peace.txt " в разные ФС с раными параметрами сжатия.
+
+            [root@server ~]# df -Th /hwpool/home/user{1,2,3,4}
+            
+            Filesystem        Type  Size  Used Avail Use% Mounted on
+            hwpool/home/user1 zfs   200M  1.3M  199M   1% /hwpool/home/user1   <----- gzip-9 наибольшее сжатие
+            hwpool/home/user2 zfs   494M  2.0M  492M   1% /hwpool/home/user2   <----- lz4
+            hwpool/home/user3 zfs   495M  3.3M  492M   1% /hwpool/home/user3   <----- zle вообще нет как такового сжатия
+            hwpool/home/user4 zfs   494M  2.5M  492M   1% /hwpool/home/user4   <----- lzjb
+            [root@server ~]# zfs get compressratio hwpool/home/user{1,2,3,4}
+            NAME               PROPERTY       VALUE  SOURCE
+            hwpool/home/user1  compressratio  2.70x  -
+            hwpool/home/user2  compressratio  1.64x  -
+            hwpool/home/user3  compressratio  1.03x  -
+            hwpool/home/user4  compressratio  1.37x  -
+            
+            
+            
