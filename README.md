@@ -1,5 +1,5 @@
 
-#                                                              1. Работа с ZFS
+#                                                               1. Работа с ZFS
 
 #                                           1.1 Настройка запущенного стенда (Vikentsi Lapa - https://github.com/nixuser/virtlab/tree/main/zfs)
 
@@ -14,7 +14,7 @@ chmod +x /usr/local/share/bash-completion/completions/zfs
 source /usr/local/share/bash-completion/completions/zfs <-----  активировали автодополнения zfs
 
 
-#                                           1.2 Срздание, управление, свойства пула zfs 
+#                                           1.2 Создание, управление, свойства пула zfs 
 
 
   Создаём простой пул из 3-х доступных дисков по 1G
@@ -35,7 +35,7 @@ source /usr/local/share/bash-completion/completions/zfs <-----  активиро
 
 2. Из свободных 3-х дисков создадим простой пул raidz1:
 
-            [root@server completions]# zpool create hwpool /dev/sd{b,c,d}
+            [root@server completions]# zpool create  hwpool raidz1 /dev/sd{b,c,d}
             
             root@server completions]# lsblk 
             
@@ -79,8 +79,8 @@ ZFS позволяет организовать файловые системы 
 При создании ФС, если не указана точка монтирования, то используется та, что задана в и
 
             hwpool/home/user1  <--- файловые системы для разнх пользователей, но с одинаковыми параметрами, можно сгруппирвать под одной ФС (home)
-                   |-->/user2
-                   |-->/user3
+                        |-->/user2
+                        |-->/user3
            
 -    Пример создания основной  ФС с заданными параметрами и дочерних с отдельными параметрами
     
@@ -123,7 +123,7 @@ ZFS позволяет организовать файловые системы 
 
 Параметры можно как задавать при создании ФС, так и  переопределять в процессе работы.
 
-Получить всё параметры файловой системы, или отдельные значения, можно с помощью команды get:
+Получить всё параметры файловой системы, можно с помощью команды get all:
 
             [root@server completions]# zfs get all hwpool/home/user1
             
@@ -212,6 +212,7 @@ ZFS позволяет организовать файловые системы 
             
             NAME               PROPERTY       VALUE  SOURCE
             hwpool/home/user1  compressratio  1.00x  -
+
 #                                                               2. Домашнее задание
 #                                           2.1 Установка параметров сжатия ФС
 
@@ -237,10 +238,155 @@ ZFS позволяет организовать файловые системы 
             hwpool/home/user4 zfs   494M  2.5M  492M   1% /hwpool/home/user4   <----- lzjb
             [root@server ~]# zfs get compressratio hwpool/home/user{1,2,3,4}
             NAME               PROPERTY       VALUE  SOURCE
-            hwpool/home/user1  compressratio  2.70x  -
-            hwpool/home/user2  compressratio  1.64x  -
-            hwpool/home/user3  compressratio  1.03x  -
-            hwpool/home/user4  compressratio  1.37x  -
+            hwpool/home/user1  compressratio  2.70x  - <----- gzip-9 наибольшее сжатие
+            hwpool/home/user2  compressratio  1.64x  - <----- lz4
+            hwpool/home/user3  compressratio  1.03x  - zle вообще нет как такового сжатия
+            hwpool/home/user4  compressratio  1.37x  - lzjb
+            
+#                                           2.2 Перенос пула устройств хранения данных с одного компьютера на другой
+
+В некоторых случаях может потребоваться перенос пула устройств хранения данных с одного компьютера на другой. При этом устройства хранения требуется отключить от исходного компьютера и подключить к целевому компьютеру. . ZFS позволяет экспортировать пул из одного компьютера и импортировать его в целевой компьютер, даже если они имеют различный порядок следования байтов (endianness).
+Пулы устройств хранения данных должны быть явно экспортированы, что будет указывать на их готовность к переходу. Эта операция приводит к загрузке на диск всех незаписанных данных, записи данных на диск с указанием о том, что был выполнен экспорт, и удалению всех данных пула из системы.
+
+*       Экспорт пула:
+
+            [root@server ~]# zpool list 
+            NAME     SIZE  ALLOC   FREE  CKPOINT  EXPANDSZ   FRAG    CAP  DEDUP    HEALTH  ALTROOT 
+            hwpool  2.75G  13.5M  2.74G        -         -     0%     0%  1.00x    ONLINE  -                                    <---------- наш созданный  pool 
+            
+            [root@server ~]# zpool export hwpool                         <-------- Экспортируем pool, он перестаёт быть доступен 
+            
+            [root@server ~]# zpool list 
+            no pools available
+            
+При наличии устройств в другом каталоге или файловых пулов для их поиска следует использовать параметр -d. Пример:
+
+1.   Для теста, создадим виртуальные файлы(диски):
+
+            [root@server ~]# for i in {1..3}; do truncate -s 2G /zfs_test/$i.img; done  <----- создадим виртуальные файлы (диски) 
+            [root@server ~]# ls -la /zfs_test/
+            total 0                                                                                                                                                                                             
+            drwxr-xr-x.  2 root root         45 Feb 10 20:43 .                                                                                                                                                  
+            dr-xr-xr-x. 20 root root        285 Feb 10 20:34 ..                                                                                                                                                 
+            -rw-r--r--.  1 root root 2147483648 Feb 10 20:43 1.img
+            -rw-r--r--.  1 root root 2147483648 Feb 10 20:43 2.img                                                                                                                                              
+            -rw-r--r--.  1 root root 2147483648 Feb 10 20:43 3.img                                                                                                                                              
+
+2.  Создаём тестовый пул "test"
+
+            [root@server ~]# zpool create test /zfs_test/{1,2,3}.img                                                                                                                                            
+            [root@server ~]# zpool status
+            [root@server ~]# zpool status                                                                                                                                                                        
+            pool: hwpool                                                                                                                                                                                       
+            state: ONLINE                                                                                                                                                                                       
+            scan: none requested                                                                                                                                                                               
+            config:                                                                                                                                                                                              
+                                                                                                                                                                                                                
+                    NAME        STATE     READ WRITE CKSUM                                                                                                                                                       
+                    hwpool      ONLINE       0     0     0                                                                                                                                                       
+                    raidz1-0  ONLINE       0     0     0                                                                                                                                                       
+                        sdb     ONLINE       0     0     0                                                                                                                                                       
+                        sdc     ONLINE       0     0     0                                                                                                                                                       
+                        sdd     ONLINE       0     0     0                                                                                                                                                       
+                                                                                                                                                                                                                
+            errors: No known data errors                                                                                                                                                                         
+                                                                                                                                                                                                                
+            pool: test                                    <------------ Тестовый пул, на нём делаем экспорт, и переносим диски {1.2.3}.img на другую машину.                                                                                                                                         
+            state: ONLINE                                                                                                                                                                                       
+            scan: none requested                                                                                                                                                                               
+            config:                                                                                                                                                                                              
+                                                                                                                                                                                                                
+                    NAME               STATE     READ WRITE CKSUM                                                                                                                                                
+                    test               ONLINE       0     0     0                                                                                                                                                
+                    /zfs_test/1.img  ONLINE       0     0     0                                                                                                                                                
+                    /zfs_test/2.img  ONLINE       0     0     0                                                                                                                                                
+                    /zfs_test/3.img  ONLINE       0     0     0
+
+                    
+             [root@server ~]# zpool export test  <------ Экспортируем пул        
+                    
+                    
+            
+3.      Для получения списка доступных пулов используется команда zpool import без каких-либо параметров, но с указанием каталога где смотреть наш пул. Пример:
+
+            [root@server ~]# zpool import  -d /zfs_test/
+            pool: test
+                id: 12513217291922710169
+            state: ONLINE
+            action: The pool can be imported using its name or numeric identifier.
+            config:
+
+                    test               ONLINE
+                    /zfs_test/1.img  ONLINE
+                    /zfs_test/2.img  ONLINE
+                    /zfs_test/3.img  ONLINE
             
             
             
+
+#                                           2.3 Импорт пула            
+
+#                                           Для домашнего задания:   
+           
+           
+            [root@server ~]# tar -xzf zfs_task1.tar.gz -C zfs_pool/   <----- Разархивируем полученный файл с экспортированным пулом
+                        
+           
+            [root@server ~]# zpool import -d /root/zfs_pool/zpoolexport/   <----- Для просмотра доступных пулов, берём директорию, где лежит экспортированный пул (указываем именно директорию)
+                pool: otus
+                id: 6554193320433390805
+                state: ONLINE
+                action: The pool can be imported using its name or numeric identifier.
+                config:
+
+                otus                                  ONLINE
+                mirror-0                            ONLINE
+                /root/zfs_pool/zpoolexport/filea  ONLINE
+                /root/zfs_pool/zpoolexport/fileb  ONLINE
+
+           
+           
+                [root@server ~]# zpool import -d /root/zfs_pool/zpoolexport/ 6554193320433390805         <------- Импортируем по  id: 6554193320433390805
+                
+                
+                [root@server ~]# zpool list
+                
+                NAME     SIZE  ALLOC   FREE  CKPOINT  EXPANDSZ   FRAG    CAP  DEDUP    HEALTH  ALTROOT
+                hwpool  2.75G  13.6M  2.74G        -         -     0%     0%  1.00x    ONLINE  -
+                otus     480M  2.09M   478M        -         -     0%     0%  1.00x    ONLINE  -
+            
+           
+           
+           
+           
+           
+#                                           2.3 Получение/отправка снимков файловой системы
+            
+            [root@server ~]# zfs receive hwpool/otus@task2 < ./otus_task2.file  <---- Полученный снимок 
+            
+            
+            [root@server ~]# zfs list 
+            NAME                USED  AVAIL     REFER  MOUNTPOINT
+            hwpool             12.7M  1.69G     33.3K  /hwpool
+            hwpool/home        8.84M   491M     36.0K  /hwpool/home
+            hwpool/home/user1  1.23M   199M     1.23M  /hwpool/home/user1
+            hwpool/home/user2  2.01M   491M     2.01M  /hwpool/home/user2
+            hwpool/home/user3  3.17M   491M     3.17M  /hwpool/home/user3
+            hwpool/home/user4  2.39M   491M     2.39M  /hwpool/home/user4
+            hwpool/otus        3.72M  1.69G     3.72M  /hwpool/otus
+            [root@server ~]# zfs list  -t snapshot                              <-------- Смотрим наличие снапшотов (снимков ФС)
+            NAME                USED  AVAIL     REFER  MOUNTPOINT
+            hwpool/otus@task2     0B      -     3.72M  -
+
+            
+            [root@server file_mess]# zfs rollback hwpool/otus@task2         <------ Делаем откат ФС на имеющийся снапшот 
+            
+            [root@server file_mess]# cat secret_message   <------ Смотрим сообщение
+            https://github.com/sindresorhus/awesome
+            
+
+            
+           
+                       
+                     
+               
